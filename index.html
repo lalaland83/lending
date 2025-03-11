@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lending Protocol</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f3f4f6;
+            font-family: 'Arial', sans-serif;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .shadow-md {
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="container mx-auto p-6">
+        <h1 class="text-4xl font-bold text-center text-blue-600 mb-6">Lending Protocol</h1>
+        
+        <!-- Wallet Connection -->
+        <div class="mb-6 text-center">
+            <button id="connectWallet" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                Connect Wallet
+            </button>
+            <p id="walletAddress" class="text-gray-700 mt-2"></p>
+        </div>
+
+        <!-- Contract Info -->
+        <div class="bg-white p-4 rounded-lg shadow-md mb-6">
+            <h2 class="text-2xl font-semibold text-gray-800">Contract Info</h2>
+            <p>Balance: <span id="contractBalance" class="font-bold"></span> ETH</p>
+            <p>Paused: <span id="pausedStatus" class="font-bold"></span></p>
+            <p>Supply Rate: <span id="supplyRate" class="font-bold"></span>%</p>
+            <p>Borrow Rate: <span id="borrowRate" class="font-bold"></span>%</p>
+        </div>
+
+        <!-- User Data -->
+        <div class="bg-white p-4 rounded-lg shadow-md mb-6">
+            <h2 class="text-2xl font-semibold text-gray-800">Your Data</h2>
+            <p>Deposits: <span id="deposits" class="font-bold"></span> ETH (<span id="depositsUsd"></span> USD)</p>
+            <p>Borrowed: <span id="borrowed" class="font-bold"></span> ETH</p>
+            <p>Borrow Interest: <span id="borrowInterest" class="font-bold"></span> ETH</p>
+            <p>Supply Interest: <span id="supplyInterest" class="font-bold"></span> ETH (<span id="supplyInterestUsd"></span> USD)</p>
+        </div>
+
+        <!-- Actions -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-white p-4 rounded-lg shadow-md">
+                <h3 class="text-xl font-semibold text-gray-800 mb-2">Deposit</h3>
+                <input id="depositAmount" type="number" step="0.01" class="w-full p-2 border rounded mb-2" placeholder="Amount in ETH">
+                <button id="depositButton" class="w-full bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">Deposit</button>
+            </div>
+            <div class="bg-white p-4 rounded-lg shadow-md">
+                <h3 class="text-xl font-semibold text-gray-800 mb-2">Withdraw</h3>
+                <input id="withdrawAmount" type="number" step="0.01" class="w-full p-2 border rounded mb-2" placeholder="Amount in ETH">
+                <button id="withdrawButton" class="w-full bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded">Withdraw</button>
+            </div>
+            <div class="bg-white p-4 rounded-lg shadow-md">
+                <h3 class="text-xl font-semibold text-gray-800 mb-2">Borrow</h3>
+                <input id="borrowAmount" type="number" step="0.01" class="w-full p-2 border rounded mb-2" placeholder="Amount in ETH">
+                <button id="borrowButton" class="w-full bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Borrow</button>
+            </div>
+            <div class="bg-white p-4 rounded-lg shadow-md">
+                <h3 class="text-xl font-semibold text-gray-800 mb-2">Repay</h3>
+                <input id="repayAmount" type="number" step="0.01" class="w-full p-2 border rounded mb-2" placeholder="Amount in ETH">
+                <button id="repayButton" class="w-full bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">Repay</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.ethers.io/lib/ethers-5.7.umd.min.js"></script>
+    <script>
+        console.log("Script loaded");
+        const contractAddress = "0x5734fec1dee9fc2d39f1666f2e729408f51699f5";
+        const optimismRpcUrl = "https://mainnet.optimism.io";
+        const abi = [
+            {"inputs":[],"stateMutability":"nonpayable","type":"constructor"},
+            {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"user","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],"name":"Borrowed","type":"event"},
+            {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"user","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"cumulativeInterest","type":"uint256"}],"name":"Deposited","type":"event"},
+            {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"owner","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"EmergencyWithdrawExecuted","type":"event"},
+            {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"user","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],"name":"Repaid","type":"event"},
+            {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"user","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"remainingInterest","type":"uint256"}],"name":"Withdrawn","type":"event"},
+            {"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"accruedSupplyInterest","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"borrow","outputs":[],"stateMutability":"nonpayable","type":"function"},
+            {"inputs":[],"name":"borrowInterestRate","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"borrowTimestamps","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"borrowedAmounts","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[{"internalType":"address","name":"user","type":"address"}],"name":"calculateSupplyInterest","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[{"internalType":"address","name":"user","type":"address"}],"name":"calculateTotalInterest","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[],"name":"collectedFees","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[],"name":"deposit","outputs":[],"stateMutability":"payable","type":"function"},
+            {"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"deposits","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[],"name":"emergencyWithdraw","outputs":[],"stateMutability":"nonpayable","type":"function"},
+            {"inputs":[{"internalType":"address","name":"user","type":"address"}],"name":"getAccruedSupplyInterest","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[{"internalType":"address","name":"user","type":"address"}],"name":"getBorrowTimestamp","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[],"name":"getContractBalance","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[{"internalType":"address","name":"user","type":"address"}],"name":"getDepositTimestamp","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[{"internalType":"address","name":"user","type":"address"}],"name":"getUserData","outputs":[{"internalType":"uint256","name":"deposited","type":"uint256"},{"internalType":"uint256","name":"borrowed","type":"uint256"},{"internalType":"uint256","name":"accruedInterest","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[],"name":"minLoanDuration","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},
+            {"inputs":[{"internalType":"bool","name":"_paused","type":"bool"}],"name":"pauseLending","outputs":[],"stateMutability":"nonpayable","type":"function"},
+            {"inputs":[],"name":"paused","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},
+            {"inputs":[],"name":"repay","outputs":[],"stateMutability":"payable","type":"function"},
+            {"inputs":[],"name":"supplyInterestRate","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"supplyTimestamps","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[{"internalType":"uint256","name":"newSupplyRate","type":"uint256"},{"internalType":"uint256","name":"newBorrowRate","type":"uint256"}],"name":"updateInterestRate","outputs":[],"stateMutability":"nonpayable","type":"function"},
+            {"inputs":[{"internalType":"uint256","name":"newDuration","type":"uint256"}],"name":"updateMinLoanDuration","outputs":[],"stateMutability":"nonpayable","type":"function"},
+            {"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"withdraw","outputs":[],"stateMutability":"nonpayable","type":"function"},
+            {"inputs":[],"name":"withdrawCollectedFees","outputs":[],"stateMutability":"nonpayable","type":"function"}
+        ];
+
+        let provider, signer, contract, userAddress;
+
+        async function init() {
+            console.log("init() started");
+            if (!window.ethereum) {
+                alert("Please install MetaMask!");
+                console.error("MetaMask not detected");
+                return;
+            }
+
+            try {
+                console.log("Switching to Optimism network");
+                await window.ethereum.request({
+                    method: "wallet_switchEthereumChain",
+                    params: [{ chainId: "0xa" }], // 0xa = Optimism Mainnet (10 in hex)
+                });
+            } catch (error) {
+                console.error("Failed to switch network:", error);
+                alert("Please switch to Optimism in MetaMask manually");
+                return;
+            }
+
+            provider = new ethers.providers.Web3Provider(window.ethereum);
+            signer = provider.getSigner();
+            contract = new ethers.Contract(contractAddress, abi, signer);
+            console.log("Contract initialized");
+
+            document.getElementById("connectWallet").addEventListener("click", connectWallet);
+            document.getElementById("depositButton").addEventListener("click", deposit);
+            document.getElementById("withdrawButton").addEventListener("click", withdraw);
+            document.getElementById("borrowButton").addEventListener("click", borrow);
+            document.getElementById("repayButton").addEventListener("click", repay);
+
+            console.log("Event listeners added");
+            await connectWallet(); // Automatisch verbinden
+        }
+
+        async function connectWallet() {
+            console.log("connectWallet() called");
+            try {
+                const accounts = await provider.send("eth_requestAccounts", []);
+                userAddress = accounts[0];
+                console.log("Connected to:", userAddress);
+                document.getElementById("walletAddress").innerText = `Connected: ${userAddress.slice(0, 6)}...${userAddress.slice(-4)}`;
+                document.getElementById("connectWallet").disabled = true;
+                updateUI();
+            } catch (error) {
+                console.error("Failed to connect wallet:", error);
+                alert("Failed to connect wallet: " + error.message);
+            }
+        }
+
+        async function getEthUsdPrice() {
+            try {
+                const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd");
+                const data = await response.json();
+                return data.ethereum.usd;
+            } catch (error) {
+                console.error("Failed to fetch ETH price:", error);
+                return 0;
+            }
+        }
+
+        async function updateUI() {
+            try {
+                const balance = await contract.getContractBalance();
+                const paused = await contract.paused();
+                const supplyRate = await contract.supplyInterestRate();
+                const borrowRate = await contract.borrowInterestRate();
+                const userData = await contract.getUserData(userAddress);
+                const supplyInterest = await contract.getAccruedSupplyInterest(userAddress);
+                const ethUsdPrice = await getEthUsdPrice();
+
+                document.getElementById("contractBalance").innerText = ethers.utils.formatEther(balance);
+                document.getElementById("pausedStatus").innerText = paused ? "Yes" : "No";
+                document.getElementById("supplyRate").innerText = (supplyRate / 100).toFixed(2);
+                document.getElementById("borrowRate").innerText = (borrowRate / 100).toFixed(2);
+                document.getElementById("deposits").innerText = ethers.utils.formatEther(userData.deposited);
+                document.getElementById("depositsUsd").innerText = (ethers.utils.formatEther(userData.deposited) * ethUsdPrice).toFixed(2);
+                document.getElementById("borrowed").innerText = ethers.utils.formatEther(userData.borrowed);
+                document.getElementById("borrowInterest").innerText = ethers.utils.formatEther(userData.accruedInterest);
+                document.getElementById("supplyInterest").innerText = ethers.utils.formatEther(supplyInterest);
+                document.getElementById("supplyInterestUsd").innerText = (ethers.utils.formatEther(supplyInterest) * ethUsdPrice).toFixed(2);
+                console.log("UI updated successfully");
+            } catch (error) {
+                console.error("Error updating UI:", error);
+            }
+        }
+
+        async function deposit() {
+            const amount = document.getElementById("depositAmount").value;
+            if (!amount || amount <= 0) return alert("Enter a valid amount");
+            try {
+                const tx = await contract.deposit({ value: ethers.utils.parseEther(amount) });
+                await tx.wait();
+                alert("Deposit successful!");
+                updateUI();
+            } catch (error) {
+                console.error("Deposit failed:", error);
+                alert("Deposit failed: " + error.message);
+            }
+        }
+
+        async function withdraw() {
+            const amount = document.getElementById("withdrawAmount").value;
+            if (!amount || amount <= 0) return alert("Enter a valid amount");
+            try {
+                const tx = await contract.withdraw(ethers.utils.parseEther(amount));
+                await tx.wait();
+                alert("Withdrawal successful!");
+                updateUI();
+            } catch (error) {
+                console.error("Withdraw failed:", error);
+                alert("Withdraw failed: " + error.message);
+            }
+        }
+
+        async function borrow() {
+            const amount = document.getElementById("borrowAmount").value;
+            if (!amount || amount <= 0) return alert("Enter a valid amount");
+            try {
+                const tx = await contract.borrow(ethers.utils.parseEther(amount));
+                await tx.wait();
+                alert("Borrow successful!");
+                updateUI();
+            } catch (error) {
+                console.error("Borrow failed:", error);
+                alert("Borrow failed: " + error.message);
+            }
+        }
+
+        async function repay() {
+            const amount = document.getElementById("repayAmount").value;
+            if (!amount || amount <= 0) return alert("Enter a valid amount");
+            try {
+                const tx = await contract.repay({ value: ethers.utils.parseEther(amount) });
+                await tx.wait();
+                alert("Repay successful!");
+                updateUI();
+            } catch (error) {
+                console.error("Repay failed:", error);
+                alert("Repay failed: " + error.message);
+            }
+        }
+
+        window.onload = () => {
+            console.log("Window loaded, calling init");
+            init();
+        };
+    </script>
+</body>
+</html>
